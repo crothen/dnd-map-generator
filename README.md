@@ -1,8 +1,7 @@
 # D&D Realm Cartographer
+[Demo](https://crothen.github.io/dnd-map-generator/)
 
 A procedural fantasy map generator for tabletop RPG campaigns, built with React, Vite, and TypeScript.
-
-![Map Generator Screenshot](./screenshot.png)
 
 ## Features
 
