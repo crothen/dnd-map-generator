@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/* Base styles */
+html {
+  font-family: 'Lora', Georgia, serif;
+}
+
+/* Fantasy font for headings */
+.font-fantasy {
+  font-family: 'Cinzel', serif;
+}
+
+/* Custom scrollbar for sidebar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #4c9d52 #1e293b;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #4c9d52 0%, #3a8040 100%);
+  border-radius: 3px;
+  border: 1px solid #1e293b;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #71b976 0%, #4c9d52 100%);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #3a8040 0%, #316636 100%);
+}
+
+/* Default scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Canvas cursor */
+canvas {
+  cursor: grab;
+}
+
+canvas:active {
+  cursor: grabbing;
+}
+
+/* Animation for map reveal */
+@keyframes mapReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.map-reveal {
+  animation: mapReveal 0.5s ease-out;
+}
+
+/* Selection styling */
+::selection {
+  background: #228b22;
+  color: white;
+}
+
+/* Custom theme colors - Tailwind v4 compatible */
+@theme {
+  --color-parchment-50: #fefdf8;
+  --color-parchment-100: #fdf9e8;
+  --color-parchment-200: #f9f0c8;
+  --color-parchment-300: #f4e4a0;
+  --color-parchment-400: #ebd26e;
+  --color-parchment-500: #e2be47;
+  --color-parchment-600: #c9a033;
+  --color-parchment-700: #a47b28;
+  --color-parchment-800: #866327;
+  --color-parchment-900: #705224;
+
+  --color-forest-50: #f3faf3;
+  --color-forest-100: #e4f4e4;
+  --color-forest-200: #cbe8cc;
+  --color-forest-300: #a2d5a5;
+  --color-forest-400: #71b976;
+  --color-forest-500: #4c9d52;
+  --color-forest-600: #3a8040;
+  --color-forest-700: #316636;
+  --color-forest-800: #2b512e;
+  --color-forest-900: #244428;
+
+  --color-mountain-50: #f6f6f7;
+  --color-mountain-100: #e2e3e5;
+  --color-mountain-200: #c5c6ca;
+  --color-mountain-300: #a0a2a8;
+  --color-mountain-400: #7c7f86;
+  --color-mountain-500: #62656c;
+  --color-mountain-600: #4e5056;
+  --color-mountain-700: #414347;
+  --color-mountain-800: #38393c;
+  --color-mountain-900: #313234;
+
+  --color-water-50: #eff9ff;
+  --color-water-100: #def2ff;
+  --color-water-200: #b6e7ff;
+  --color-water-300: #75d7ff;
+  --color-water-400: #2cc4ff;
+  --color-water-500: #00adef;
+  --color-water-600: #008bcd;
+  --color-water-700: #006fa6;
+  --color-water-800: #005d89;
+  --color-water-900: #064e71;
+}
