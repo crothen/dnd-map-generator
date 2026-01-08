@@ -201,7 +201,16 @@ function applyLandmassMask(
       // Variation for the mask itself
       // We use un-warped coords for this high-frequency detail noise to strictly match pixel space
       // or using warped is also fine. Let's use warped to match the distortions.
-      const variation = warpNoiseX(wx / 50, wy / 50) * 0.2;
+
+      // FIX: For inland maps, do NOT use warped coordinates for the base generation
+      // This prevents the "streak" artifacts.
+      // Other maps (Continent, etc.) benefit from the warping for organic shapes.
+      const useWarp = mapType !== 'inland';
+
+      const effectiveX = useWarp ? wx : x;
+      const effectiveY = useWarp ? wy : y;
+
+      const variation = warpNoiseX(effectiveX / 50, effectiveY / 50) * 0.2;
 
       let mask = 1;
 
@@ -223,9 +232,10 @@ function applyLandmassMask(
           mask = coastalMask(tx, ty, width, height, variation, rng); // Pass RNG
           break;
         case 'inland':
-          // Use water coverage to determine lake density/size
-          // High waterCoverage = more lakes
-          mask = inlandMask(wx, wy, width, height, rng, waterCoverage);
+          // Inland Mask:
+          // Instead of cutting holes, we just return 1 (Land).
+          // We handle the "Lakes" via the base terrain offset later.
+          mask = 1;
           break;
         case 'isthmus':
           mask = isthmusMask(tx, ty, width, height, variation);
@@ -285,7 +295,34 @@ function applyLandmassMask(
       } else {
         // Land/Coast
         // normalize 0.3..1.0 to 0..1
-        const landFactor = (mask - 0.3) / 0.7;
+        let landFactor = (mask - 0.3) / 0.7;
+
+        // For Great Lake map, dampen the elevation to create a basin feel
+        // instead of high mountains everywhere at the edge
+        if (mapType === 'great-lake') {
+          landFactor *= 0.6; // Cap max height at 60% relative to other maps
+        }
+
+        // Special handling for Inland to simulate Water Table
+        if (mapType === 'inland') {
+          // For inland, mask is always 1.
+          // We want "Simulated Lakes" where the terrain dips below sea level.
+
+          // Water Coverage controls the vertical shift.
+          // Low Water (0.0) -> Shift UP (drier)
+          // High Water (1.0) -> Shift DOWN (wetter)
+
+          // Base Noise is normalized (terrainValue) 0..1 centered at 0.5.
+          // SeaLevel is 0.35.
+          // We want to shift the terrain so that at 0.5 water coverage, we have some lakes.
+
+          // Shift range: +0.2 (Dry) to -0.2 (Wet)
+          const tableOffset = (0.5 - waterCoverage) * 0.4;
+
+          // Simple shift
+          heightmap[idx] = clamp(terrainValue + tableOffset, 0, 1);
+          continue;
+        }
         const smoothedLand = smootherstep(0, 1, landFactor);
 
         // Base height is sea level
@@ -331,8 +368,8 @@ function archipelagoMask(
   const clusters = clusterNoise(nx * 3, ny * 3);
 
   // 2. Individual islands within clusters (the "what" shape)
-  // Higher frequency
-  const islands = detailNoise(nx * 15, ny * 15);
+  // Lower frequency (was 15) for larger, cleaner islands
+  const islands = detailNoise(nx * 6, ny * 6);
 
   // 3. Combine: Islands exist where clusters are high AND island noise is high
   // Normalize -1..1 to 0..1
@@ -340,13 +377,13 @@ function archipelagoMask(
   const islandVal = (islands + 1) / 2;
 
   // Shape the clusters: push down low values to make gaps
-  const shapedCluster = smootherstep(0.4, 0.8, clusterVal);
+  const shapedCluster = smootherstep(0.45, 0.85, clusterVal);
 
   // Combine
   let mask = shapedCluster * islandVal;
 
   // Boost the core of islands
-  mask = mask * 1.5;
+  mask = mask * 1.8;
 
   // Fade edges of map slightly to ensure we don't have hard cuts
   const edgeDist = Math.max(Math.abs(nx - 0.5), Math.abs(ny - 0.5)) * 2; // 0 center, 1 edge
@@ -504,21 +541,23 @@ function atollMask(
   }
 
   // Break up the ring into separate islands using angular noise
-  const angularBreak = breakNoise(Math.cos(angle) * 2, Math.sin(angle) * 2);
-  const islandShape = islandNoise(x / 30, y / 30);
+  const angularBreak = breakNoise(Math.cos(angle) * 3, Math.sin(angle) * 3);
+  // Smoother island shapes (was 30)
+  const islandShape = islandNoise(x / 60, y / 60);
 
   // Create gaps in the ring (channels between islands)
-  const gapThreshold = -0.1 + variation * 0.2;
+  // Sharper threshold for cleaner gaps
+  const gapThreshold = 0.0 + variation * 0.1;
   if (angularBreak < gapThreshold) {
     return 0; // Gap in the ring
   }
 
   // Island shape within the ring
   const ringStrength = 1 - ringDist / ringWidth;
-  const islandMask = (angularBreak + 0.5) * ringStrength;
+  const islandMask = (angularBreak * 0.5 + 0.5) * ringStrength;
 
   // Add small island variation
-  const smallIslands = islandShape > 0.3 ? 0.3 : 0;
+  const smallIslands = islandShape > 0.4 ? 0.2 : 0;
 
   return clamp(islandMask + smallIslands, 0, 1);
 }
@@ -606,32 +645,35 @@ function fjordMask(
   const freq2X = 7 + rng.next() * 5; // 7-12
   const freq2Y = 0.6 + rng.next() * 0.6; // 0.6-1.2
 
-  // Primary fjords - deep cuts into the land
-  const fjord1 = fjordNoise1(xNorm * freq1X, yFactor * freq1Y);
-  const fjord2 = fjordNoise2(xNorm * freq2X + 10, yFactor * freq2Y);
+  // Primary fjords - deep cuts into the land.
+  // We use ridged noise (abs) reversed to create deep valleys
+  const fjord1 = Math.abs(fjordNoise1(xNorm * freq1X, yFactor * freq1Y));
 
-  // Fjords extend from the coast (top) deep into the land
-  // They should be narrow and long
-  const fjordDepth1 = fjord1 > 0.3 ? (fjord1 - 0.3) * 2.5 : 0;
-  const fjordDepth2 = fjord2 > 0.4 ? (fjord2 - 0.4) * 2.0 : 0;
+  // Make cuts wider and deeper
+  // If noise is close to 0 (valley), we cut.
+  // 0.2 valley width
+  const isValley1 = fjord1 < 0.15;
 
-  // Fjords penetrate deeper into land the stronger the signal
-  const maxFjordPenetration = 0.7; // How far fjords can reach (70% down the map)
-  const fjordReach1 = fjordDepth1 * maxFjordPenetration;
-  const fjordReach2 = fjordDepth2 * maxFjordPenetration * 0.8;
+  // Secondary smaller valleys
+  const fjord2 = Math.abs(fjordNoise2(xNorm * freq2X + 10, yFactor * freq2Y));
+  const isValley2 = fjord2 < 0.1;
 
-  // Check if we're in a fjord
-  const inFjord1 = yFactor < fjordReach1 && fjord1 > 0.3;
-  const inFjord2 = yFactor < fjordReach2 && fjord2 > 0.4;
+  // Fjords penetrate deeper into land
+  const maxFjordPenetration = 0.8;
 
-  if (inFjord1 || inFjord2) {
-    // Inside a fjord - this is water
+  // Calculate reach based on noise Y to vary length naturally
+  // but simpler logic: just cut if we are in the top % and satisfy valley condition
+
+  if ((isValley1 || isValley2) && yFactor < maxFjordPenetration) {
+    // Fade out the fjord cut as we go south to merge with land
+
+    // Inside a fjord
     // But add some small islands/skerries
     const skerry = fjordNoise1(x / 20, y / 20);
     if (skerry > 0.7 && yFactor > 0.15) {
-      return 0.6; // Small island in fjord
+      return 0.5; // Small island in fjord (still lowish)
     }
-    return 0; // Fjord water
+    return -0.2; // Deep water! Be explicit.
   }
 
   // Add rugged coastline detail
@@ -718,29 +760,40 @@ function greatLakeMask(
 
   // Distort the lake shape
   const shapeNoise = createNoise2D(() => rng.next());
-  const distortion = shapeNoise(x / 150, y / 150) * 0.2;
+  const distortion = shapeNoise(x / 250, y / 250) * 0.15;
 
   // Calculate boundary
   const lakeBoundary = lakeRadius + distortion;
 
-  if (normalizedDist < lakeBoundary) {
-    // Inside lake
+  // Create a soft boundary for the shore
+  /* Use smooth transition around boundary */
+  const shoreWidth = 0.1;
+  const deepLake = lakeBoundary - shoreWidth;
+  const dryLand = lakeBoundary + shoreWidth;
 
+  // If inside the lake proper
+  if (normalizedDist < deepLake) {
     // Add some islands in the lake?
+    // Smoother, larger islands
     const islandNoise = createNoise2D(() => rng.next());
-    const islandVal = islandNoise(x / 50, y / 50);
+    const islandVal = islandNoise(x / 100, y / 100);
 
-    // Some islands near the shore or random
-    if (islandVal > 0.6) {
-      return 1; // Island
+    // Some islands near the center or scattered
+    if (islandVal > 0.65) {
+      // Smooth island edge
+      return smootherstep(0.65, 0.75, islandVal);
     }
-
-    return 0; // Water
+    return 0;
   }
 
-  // Land
-  // Smooth transition from lake to land
-  return smootherstep(lakeBoundary, lakeBoundary + 0.1, normalizedDist);
+  // Transition zone
+  if (normalizedDist < dryLand) {
+    // normalizedDist goes from deepLake -> dryLand
+    // output needs to go from 0 -> 1
+    return smootherstep(deepLake, dryLand, normalizedDist);
+  }
+
+  return 1; // Land
 }
 
 /**
